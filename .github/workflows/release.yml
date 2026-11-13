@@ -1,0 +1,97 @@
+name: Release
+
+# A tag such as v0.2.0 builds the program and publishes a GitHub release with
+# it. A tag with a suffix, such as v0.3.0-beta.1, makes a pre-release.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+
+      - name: Read the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw "Not a version tag: $version" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Contains('-'))" >> $env:GITHUB_OUTPUT
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          # The file version of the executable comes from wails.json.
+          $config = Get-Content wails.json -Raw | ConvertFrom-Json
+          $config.info.productVersion = ($version -split '-')[0]
+          $config | ConvertTo-Json -Depth 10 | Set-Content wails.json -Encoding utf8
+          wails build -trimpath -ldflags "-s -w -X main.version=$version"
+
+      - name: Test
+        shell: pwsh
+        run: |
+          # Failures also go out as annotations, which show without opening the log.
+          $out = go test ./... 2>&1
+          $code = $LASTEXITCODE
+          $out | Write-Output
+          if ($code -ne 0) {
+            $out | Where-Object { "$_" -match '(--- FAIL|^FAIL|panic:|_test\.go:\d+)' } | Select-Object -First 40 | ForEach-Object { "::error::$_" }
+            exit 1
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $zip = "SashaExplorer-$version-windows-amd64.zip"
+          Compress-Archive -Path build/bin/SashaExplorer.exe, LICENSE, README.md -DestinationPath $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zip" | Set-Content "$zip.sha256" -Encoding ascii -NoNewline
+
+      - name: Write the notes
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $lines = Get-Content CHANGELOG.md
+          $start = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -match "^## \[$([regex]::Escape($version))\]" })
+          $notes = @()
+          if ($start -ge 0) {
+            for ($i = $start + 1; $i -lt $lines.Count -and $lines[$i] -notmatch '^## \[' -and $lines[$i] -notmatch '^\[.+\]: '; $i++) { $notes += $lines[$i] }
+          }
+          if (-not ($notes -join '').Trim()) { $notes = @("See the [changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).") }
+          $notes += ''
+          $notes += "Download ``SashaExplorer-$version-windows-amd64.zip``, unpack ``SashaExplorer.exe``, and run it. The ``.sha256`` file holds its checksum."
+          $notes -join "`n" | Set-Content notes.md -Encoding utf8
+
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $flags = @()
+          if ('${{ steps.version.outputs.prerelease }}' -eq 'True') { $flags += '--prerelease' }
+          gh release create '${{ github.ref_name }}' `
+            "SashaExplorer-$version-windows-amd64.zip" `
+            "SashaExplorer-$version-windows-amd64.zip.sha256" `
+            --title "SashaExplorer $version" --notes-file notes.md @flags

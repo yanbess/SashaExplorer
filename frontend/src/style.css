@@ -1,0 +1,224 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1214;
+  --surface: #181c20;
+  --surface-raised: #21262b;
+  --selected: #3a2142;
+  --selected-strong: #4d2a58;
+  --border: #30373e;
+  --text: #e8ecef;
+  --text-muted: #98a3ad;
+  --accent: #e58cf0;
+  --accent-hover: #f0aef6;
+  --on-accent: #2a0f2e;
+  --accent-soft: rgb(229 140 240 / 16%);
+  --cyan: #6fdcf0;
+  --danger: #ff7b7b;
+  --warning: #e8b45a;
+  --success: #7fd08a;
+  --radius: 8px;
+  --shadow: rgb(0 0 0 / 45%);
+  --backdrop: rgb(0 0 0 / 60%);
+  --checker-a: #1b2025;
+  --checker-b: #14181c;
+  /* Icons are drawn in neon colors, which a light page darkens. */
+  --icon-filter: brightness(1);
+}
+
+/* The theme is set on the root element: light, dark, or the one of Windows. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f5f6f8;
+  --surface-raised: #e9ecf0;
+  --selected: #f7e1fa;
+  --selected-strong: #efc8f4;
+  --border: #d8dde3;
+  --text: #1c2127;
+  --text-muted: #5d6874;
+  --accent: #a2309f;
+  --accent-hover: #86257f;
+  --on-accent: #ffffff;
+  --accent-soft: rgb(162 48 159 / 12%);
+  --cyan: #0b7f97;
+  --danger: #c93333;
+  --warning: #a86b12;
+  --success: #2d8a44;
+  --shadow: rgb(20 30 40 / 18%);
+  --backdrop: rgb(20 30 40 / 35%);
+  --checker-a: #e7eaee;
+  --checker-b: #f7f8fa;
+  --icon-filter: saturate(1.5) brightness(0.72);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #f5f6f8;
+    --surface-raised: #e9ecf0;
+    --selected: #f7e1fa;
+    --selected-strong: #efc8f4;
+    --border: #d8dde3;
+    --text: #1c2127;
+    --text-muted: #5d6874;
+    --accent: #a2309f;
+    --accent-hover: #86257f;
+    --on-accent: #ffffff;
+    --accent-soft: rgb(162 48 159 / 12%);
+    --cyan: #0b7f97;
+    --danger: #c93333;
+    --warning: #a86b12;
+    --success: #2d8a44;
+    --shadow: rgb(20 30 40 / 18%);
+    --backdrop: rgb(20 30 40 / 35%);
+    --checker-a: #e7eaee;
+    --checker-b: #f7f8fa;
+    --icon-filter: saturate(1.5) brightness(0.72);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+dialog {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+dialog::backdrop {
+  background: var(--backdrop);
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+button.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+button.icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  padding: 0;
+}
+
+.error {
+  color: var(--danger);
+}
+
+input[type='checkbox'] {
+  width: auto;
+  height: auto;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: var(--border) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted) padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.drop-target {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: -2px;
+  background: var(--accent-soft) !important;
+}

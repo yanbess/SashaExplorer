@@ -1,0 +1,48 @@
+{
+  "name": "reveal-in-sashaexplorer",
+  "displayName": "Reveal in SashaExplorer",
+  "description": "Shows files and folders in SashaExplorer instead of Windows Explorer.",
+  "publisher": "yanbess",
+  "version": "0.1.0",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "sashaExplorer.reveal",
+        "title": "Reveal in SashaExplorer"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        { "command": "sashaExplorer.reveal", "group": "navigation@40" }
+      ],
+      "editor/title/context": [
+        { "command": "sashaExplorer.reveal", "group": "2_files@40" }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "sashaExplorer.reveal",
+        "key": "shift+alt+r",
+        "when": "!terminalFocus"
+      }
+    ],
+    "configuration": {
+      "title": "SashaExplorer",
+      "properties": {
+        "sashaExplorer.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to SashaExplorer.exe. Empty means the copy that ran last, which the program records for the current Windows user."
+        }
+      }
+    }
+  }
+}

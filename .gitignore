@@ -1,0 +1,11 @@
+build/bin
+frontend/dist
+frontend/node_modules
+# Wails build cache
+frontend/package.json.md5
+
+# Per-device data
+*.state
+
+# Packed VS Code extension
+vscode-extension/*.vsix

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+
+      - name: Build
+        run: wails build -trimpath
+
+      - name: Check the frontend
+        working-directory: frontend
+        run: npx svelte-check --threshold error
+
+      - name: Vet
+        run: go vet ./...
+        continue-on-error: true
+
+      - name: Test
+        shell: pwsh
+        run: |
+          # Failures also go out as annotations, which show without opening the log.
+          $out = go test ./... 2>&1
+          $code = $LASTEXITCODE
+          $out | Write-Output
+          if ($code -ne 0) {
+            $out | Where-Object { "$_" -match '(--- FAIL|^FAIL|panic:|_test\.go:\d+)' } | Select-Object -First 40 | ForEach-Object { "::error::$_" }
+            exit 1
+          }

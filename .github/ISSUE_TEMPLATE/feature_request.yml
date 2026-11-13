@@ -1,0 +1,11 @@
+name: Idea
+description: Suggest something new or a change.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: What you want to do, and how SashaExplorer could make it easier.
+    validations:
+      required: true
