@@ -119,6 +119,20 @@ type State struct {
 	LastUpdateCheck int64 `json:"lastUpdateCheck"`
 	// SkippedVersion is a release the user chose not to hear about again.
 	SkippedVersion string `json:"skippedVersion"`
+
+	// QuickAccess keeps the sidebar folders pinned to the Quick access of
+	// Windows. The program writes it, not the page.
+	QuickAccess *QuickAccess `json:"quickAccess,omitempty"`
+}
+
+// QuickAccess is the setting that pins the sidebar folders to the Quick access
+// of Windows, and what it pinned.
+type QuickAccess struct {
+	Enabled bool `json:"enabled"`
+	// Handled are the folders already dealt with, and Pinned those of them the
+	// program pinned itself.
+	Handled []string `json:"handled"`
+	Pinned  []string `json:"pinned"`
 }
 
 // Themes of the window.
@@ -253,6 +267,13 @@ func Normalize(value State) State {
 	}
 	if len(value.SkippedVersion) > 64 {
 		value.SkippedVersion = ""
+	}
+	if q := value.QuickAccess; q != nil {
+		value.QuickAccess = &QuickAccess{
+			Enabled: q.Enabled,
+			Handled: uniquePaths(q.Handled, MaxPlaces),
+			Pinned:  uniquePaths(q.Pinned, MaxPlaces),
+		}
 	}
 	return value
 }

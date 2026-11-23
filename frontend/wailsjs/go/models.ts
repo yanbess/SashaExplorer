@@ -523,6 +523,22 @@ export namespace state {
 		    return a;
 		}
 	}
+	export class QuickAccess {
+	    enabled: boolean;
+	    handled: string[];
+	    pinned: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new QuickAccess(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.handled = source["handled"];
+	        this.pinned = source["pinned"];
+	    }
+	}
 	export class Terminal {
 	    id: string;
 	    name: string;
@@ -591,6 +607,7 @@ export namespace state {
 	    checkUpdates: boolean;
 	    lastUpdateCheck: number;
 	    skippedVersion: string;
+	    quickAccess?: QuickAccess;
 	
 	    static createFrom(source: any = {}) {
 	        return new State(source);
@@ -627,6 +644,7 @@ export namespace state {
 	        this.checkUpdates = source["checkUpdates"];
 	        this.lastUpdateCheck = source["lastUpdateCheck"];
 	        this.skippedVersion = source["skippedVersion"];
+	        this.quickAccess = this.convertValues(source["quickAccess"], QuickAccess);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -81,6 +81,8 @@
   let current = $state<SettingsSection>(untrack(() => section))
   let explorerMenu = $state(false)
   let foldersDefault = $state(false)
+  let quickAccess = $state(false)
+  let quickAccessBusy = $state(false)
   let cacheSize = $state(0)
   let message = $state('')
   let error = $state('')
@@ -96,9 +98,10 @@
 
   onMount(async () => {
     try {
-      ;[explorerMenu, foldersDefault, cacheSize] = await Promise.all([
+      ;[explorerMenu, foldersDefault, quickAccess, cacheSize] = await Promise.all([
         api.ExplorerMenu(),
         api.FoldersDefault(),
+        api.QuickAccess(),
         api.ThumbnailCacheSize(),
       ])
     } catch {
@@ -128,6 +131,20 @@
       say(enabled ? 'Added to the Explorer menu, under "Show more options" on Windows 11.' : 'Removed from the Explorer menu.')
     } catch (e) {
       say(errorText(e), true)
+    }
+  }
+
+  async function setQuickAccess(enabled: boolean) {
+    quickAccess = enabled
+    quickAccessBusy = true
+    try {
+      await api.SetQuickAccess(enabled)
+      say(enabled ? 'The sidebar folders are pinned to Quick access.' : 'The folders pinned from here are unpinned.')
+    } catch (e) {
+      // The setting stays as chosen. What failed is tried again later.
+      say(errorText(e), true)
+    } finally {
+      quickAccessBusy = false
     }
   }
 
@@ -403,6 +420,22 @@
             </span>
           </span>
           <input type="checkbox" role="switch" checked={foldersDefault} onchange={(event) => setFoldersDefault(event.currentTarget.checked)} />
+        </label>
+        <label class="row switch">
+          <span class="text">
+            <span class="label">Sidebar folders in Quick access</span>
+            <span class="hint">
+              Pins the folders of the sidebar to the Quick access of Windows, so the open and save dialogs of other programs
+              show them too. Drives are left out. A folder taken out of the sidebar is unpinned, unless it was pinned before.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={quickAccess}
+            disabled={quickAccessBusy}
+            onchange={(event) => setQuickAccess(event.currentTarget.checked)}
+          />
         </label>
         <div class="row">
           <div class="text">

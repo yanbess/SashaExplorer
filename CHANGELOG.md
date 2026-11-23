@@ -6,6 +6,11 @@ All notable changes to this project are written here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A setting that pins the sidebar folders to the Quick access of Windows, so
+  the open and save dialogs of other programs show them.
+
 ## [0.1.0] - 2026-11-13
 
 The first public release of the file manager for fans of Cyberpunk: Edgerunners.

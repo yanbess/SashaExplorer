@@ -75,6 +75,8 @@ export function Properties(arg1:Array<string>):Promise<void>;
 
 export function PurgeFromBin(arg1:Array<string>):Promise<void>;
 
+export function QuickAccess():Promise<boolean>;
+
 export function ReadText(arg1:string):Promise<files.TextPreview>;
 
 export function RecycleBin():Promise<winshell.RecycleBin>;
@@ -98,6 +100,8 @@ export function SetClipboard(arg1:Array<string>,arg2:boolean):Promise<void>;
 export function SetExplorerMenu(arg1:boolean):Promise<void>;
 
 export function SetFoldersDefault(arg1:boolean):Promise<void>;
+
+export function SetQuickAccess(arg1:boolean):Promise<void>;
 
 export function SetTheme(arg1:string):Promise<void>;
 

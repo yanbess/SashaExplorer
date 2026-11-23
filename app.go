@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -73,6 +74,16 @@ type App struct {
 	saved    state.State
 	hasSaved bool
 	window   *state.Window
+	// saveMu keeps writes of the state file in the order their values were made.
+	saveMu sync.Mutex
+
+	// quick is the Quick access setting and what it pinned, and quickPlaces the
+	// sidebar it follows. quickWake asks for a sync, and quickMu lets one run at
+	// a time.
+	quick       state.QuickAccess
+	quickPlaces []string
+	quickWake   chan struct{}
+	quickMu     sync.Mutex
 }
 
 // NewApp creates the application with its data file next to the executable.
@@ -119,6 +130,12 @@ func NewApp(args []string) (*App, error) {
 	a.journal = undo.New(func(state undo.State) { a.emit(eventUndoChanged, state) })
 	a.started = a.state.Load()
 	a.window = a.started.Window
+	if q := a.started.QuickAccess; q != nil {
+		a.quick = *q
+	}
+	a.quickPlaces = a.started.Places
+	a.quickWake = make(chan struct{}, 1)
+	go a.quickAccessLoop()
 	return a, nil
 }
 
@@ -151,6 +168,8 @@ func (a *App) beforeClose(context.Context) bool {
 	if !ok {
 		return false
 	}
+	a.saveMu.Lock()
+	defer a.saveMu.Unlock()
 	a.mu.Lock()
 	value := a.saved
 	hasSaved := a.hasSaved
@@ -169,6 +188,8 @@ func (a *App) domReady(context.Context) {
 	if exe, err := os.Executable(); err == nil {
 		shellmenu.RememberPath(exe)
 	}
+	// A pin that failed last time, such as of a network folder, is tried again.
+	a.requestQuickAccessSync()
 }
 
 func (a *App) shutdown(context.Context) {
@@ -261,11 +282,21 @@ func (a *App) GetStartup() Startup {
 
 // SaveState remembers the tabs, places, history, layout, and settings.
 func (a *App) SaveState(value state.State) error {
+	a.saveMu.Lock()
+	defer a.saveMu.Unlock()
 	a.mu.Lock()
 	value.Window = a.window
+	value.QuickAccess = a.quickAccessCopy()
+	placesChanged := !slices.Equal(value.Places, a.quickPlaces)
+	if placesChanged {
+		a.quickPlaces = slices.Clone(value.Places)
+	}
 	a.saved = value
 	a.hasSaved = true
 	a.mu.Unlock()
+	if placesChanged {
+		a.requestQuickAccessSync()
+	}
 	return a.state.Save(value)
 }
 

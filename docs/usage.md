@@ -136,6 +136,15 @@ The gear at the bottom of the sidebar opens Settings.
     Explorer itself keeps working. "Show in folder" in many programs, and
     "Reveal in File Explorer" in VS Code, ask Windows for Explorer by name, so
     they still open Explorer; for VS Code there is an extension instead.
+  - **Sidebar folders in Quick access** pins the folders of the sidebar to the
+    Quick access of Windows (Home on Windows 11). The open and save dialogs of
+    other programs show Quick access in their left pane, so the same folders are
+    there. Drives are left out, since the dialogs list them anyway. A folder
+    added to the sidebar is pinned, and one taken out is unpinned, unless it was
+    pinned before SashaExplorer did it. A folder unpinned in Explorer stays
+    unpinned until the switch is turned off and on again. Turning it off unpins
+    only what SashaExplorer pinned. A pin that fails, such as of a network folder
+    that is offline, is tried again at the next start.
   - **Saved thumbnails** can be cleared.
 - **Updates:** a daily check for a new release on GitHub, and **Check now**. When
   there is one, a note offers its page or to skip that version. Nothing is

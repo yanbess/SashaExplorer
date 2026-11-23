@@ -134,6 +134,10 @@ export function PurgeFromBin(arg1) {
   return window['go']['main']['App']['PurgeFromBin'](arg1);
 }
 
+export function QuickAccess() {
+  return window['go']['main']['App']['QuickAccess']();
+}
+
 export function ReadText(arg1) {
   return window['go']['main']['App']['ReadText'](arg1);
 }
@@ -180,6 +184,10 @@ export function SetExplorerMenu(arg1) {
 
 export function SetFoldersDefault(arg1) {
   return window['go']['main']['App']['SetFoldersDefault'](arg1);
+}
+
+export function SetQuickAccess(arg1) {
+  return window['go']['main']['App']['SetQuickAccess'](arg1);
 }
 
 export function SetTheme(arg1) {
