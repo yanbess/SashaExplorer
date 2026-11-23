@@ -523,6 +523,45 @@ export namespace state {
 		    return a;
 		}
 	}
+	export class Group {
+	    id: string;
+	    name: string;
+	    panes: Pane[];
+	    focusedPane: number;
+	    splitRatio: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Group(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.panes = this.convertValues(source["panes"], Pane);
+	        this.focusedPane = source["focusedPane"];
+	        this.splitRatio = source["splitRatio"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class QuickAccess {
 	    enabled: boolean;
 	    handled: string[];
@@ -581,6 +620,12 @@ export namespace state {
 	    panes: Pane[];
 	    focusedPane: number;
 	    splitRatio: number;
+	    groups: Group[];
+	    activeGroup: string;
+	    groupsOpen: boolean;
+	    placesOpen: boolean;
+	    sidebarOrder: string[];
+	    sectionHeights: Record<string, number>;
 	    tabs?: Tab[];
 	    activeIndex?: number;
 	    windowsIcons: boolean;
@@ -618,6 +663,12 @@ export namespace state {
 	        this.panes = this.convertValues(source["panes"], Pane);
 	        this.focusedPane = source["focusedPane"];
 	        this.splitRatio = source["splitRatio"];
+	        this.groups = this.convertValues(source["groups"], Group);
+	        this.activeGroup = source["activeGroup"];
+	        this.groupsOpen = source["groupsOpen"];
+	        this.placesOpen = source["placesOpen"];
+	        this.sidebarOrder = source["sidebarOrder"];
+	        this.sectionHeights = source["sectionHeights"];
 	        this.tabs = this.convertValues(source["tabs"], Tab);
 	        this.activeIndex = source["activeIndex"];
 	        this.windowsIcons = source["windowsIcons"];

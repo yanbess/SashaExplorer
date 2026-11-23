@@ -11,24 +11,34 @@ file selected.
 
 ## Window
 
-- **Sidebar:** This PC, then places: the desktop and the drives at first. Drag a
+- **Sidebar:** This PC and the Recycle Bin, then the sections Groups, Places,
+  and Recent. Each section folds with a click on its title, and dragging a title
+  moves the section above or below the others. Drag the bottom edge of an open
+  section to change its height; a double click on the edge makes it as tall as
+  its content again. The program remembers all of this.
+- **Places:** the desktop and the drives at first. Drag a
   folder from the list to the edge of a place to add it, drag places to reorder
   them, and remove them with the cross, which asks first. A drive taken out stays
   out, while a new drive, such as a USB stick, joins on its own.
-- **Recycle Bin** closes the list of places: its icon fills up with its content,
+- **Recycle Bin:** its icon fills up with its content,
   its button or right click empties it, and items dropped on it are deleted
   there. A click opens it in a tab with every drive's deleted items, where they
   were, and when they were deleted. **Restore** puts items back, and undo
   deletes them again; Del deletes them for good.
 - **Recent** lists opened folders by their path, with the middle left out when
-  it is long. As in VS Code, it sits at the bottom of the sidebar and starts
-  folded; click its title to unfold it, and drag its top edge to change its
-  height. A double click on the edge gives it its first height back. The
-  program remembers both.
+  it is long. It starts folded.
 - **Tabs** come back when the program opens again, with their pins. Right click a
   tab to pin it, duplicate it, or close others or those to the right. Group
   commands leave pinned tabs alone. A middle click closes a tab, or opens a
   folder in a new tab.
+- **Groups:** every tab is
+  in a group, and the window shows the tabs of one group, with its own split, as
+  it was left. **General** always exists and cannot be deleted. The plus button
+  makes a group; double click a group or use its menu to rename it, and drag
+  groups to change their order. To move a
+  tab, drag it onto a group, or right click it and choose **Move to group…**,
+  which can also make a new group for it. Deleting a group that has tabs asks
+  whether they move to General or close with it.
 - **Split:** drag a tab to the right side of the list, or press the split button
   or Ctrl+\\, to see two folders side by side. Each side has its own tabs; drag a
   tab onto the other side to move it there. The button again puts the sides back
@@ -38,6 +48,16 @@ file selected.
 - **Address bar:** click a part of the path to go there, or an empty spot to type
   a path. Environment variables such as `%APPDATA%` work, and a path to a file
   opens its folder with the file selected.
+- **Selecting with a rectangle:** press on an empty spot and drag to select what
+  the rectangle touches; in details, the room of a row beside its name works
+  too. Ctrl turns the touched items on or off, and Shift adds them. The list
+  scrolls when the pointer nears its top or bottom edge.
+- **Icons:** the app draws its own icons for kinds of files, such as pictures,
+  PDFs, documents, and archives. Programs, shortcuts, projects of well-known
+  programs (Photoshop, Premiere, After Effects, Blender, Figma, and others), and
+  types it has no drawing for keep their Windows icon, which is the icon of the
+  program that opens them. **Windows icons** in the settings shows Windows icons
+  everywhere.
 - **Views:** details, medium icons, and gallery. In the gallery, Ctrl+wheel
   changes the size. Each folder keeps its own view and sort order, by name, date
   modified, date created, type, or size. A folder with pictures shows the first

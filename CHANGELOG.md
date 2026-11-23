@@ -8,6 +8,13 @@ All notable changes to this project are written here. The format follows
 
 ### Added
 
+- Tab groups in the sidebar: each shows its own tabs and split, General always
+  exists, tabs move between groups by drag or from their menu, and groups can
+  be reordered.
+- Sidebar sections that fold and can be moved by their titles.
+- Windows icons for programs' projects and for file types without a drawing.
+- Selecting files by drawing a rectangle, with Ctrl and Shift, and scrolling at
+  the edges.
 - A setting that pins the sidebar folders to the Quick access of Windows, so
   the open and save dialogs of other programs show them.
 

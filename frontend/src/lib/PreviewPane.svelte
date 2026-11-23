@@ -2,7 +2,7 @@
   import { untrack } from 'svelte'
   import * as api from '../../wailsjs/go/main/App'
   import type { files, media } from '../../wailsjs/go/models'
-  import FileIcon from './FileIcon.svelte'
+  import FileIcon, { prefersWindowsIcon } from './FileIcon.svelte'
   import Icon from './Icon.svelte'
   import FolderThumb from './FolderThumb.svelte'
   import type { Entry } from './FileView.svelte'
@@ -25,7 +25,6 @@
     WEB_IMAGES,
     WEB_VIDEOS,
     samePath,
-    hasOwnIcon,
     parentPath,
   } from './util'
 
@@ -328,7 +327,7 @@
           <pre class="text">{text.text}{text.truncated ? '\n…' : ''}</pre>
         {:else if themed && single.dir}
           <FolderThumb folder={single} size={160} />
-        {:else if themed && (single.dir || (!IMAGES.has(single.ext) && !VIDEOS.has(single.ext) && !hasOwnIcon(single) && single.ext !== '.pdf'))}
+        {:else if themed && (single.dir || (!IMAGES.has(single.ext) && !VIDEOS.has(single.ext) && !prefersWindowsIcon(single) && single.ext !== '.pdf'))}
           <FileIcon entry={single} size={128} />
         {:else}
           <img
@@ -387,7 +386,7 @@
   {:else if selected.length > 1}
     <div class="stage stack">
       {#each selected.slice(0, 3) as entry, index (entry.path)}
-        {#if themed && !hasOwnIcon(entry)}
+        {#if themed && !prefersWindowsIcon(entry)}
           <span
             class="stacked"
             style:transform={`translate(${(index - 1) * 18}px, ${(index - 1) * -10}px) rotate(${(index - 1) * 6}deg)`}

@@ -67,6 +67,20 @@ type State struct {
 	Panes       []Pane  `json:"panes"`
 	FocusedPane int     `json:"focusedPane"`
 	SplitRatio  float64 `json:"splitRatio"`
+	// Groups are the tab groups, each with its own panes; the General group is
+	// always first. Panes, FocusedPane, and SplitRatio are those of the shown
+	// group as well, which is what versions without groups read.
+	Groups      []Group `json:"groups"`
+	ActiveGroup string  `json:"activeGroup"`
+	// GroupsOpen shows the list of groups in the sidebar, and PlacesOpen the
+	// places.
+	GroupsOpen bool `json:"groupsOpen"`
+	PlacesOpen bool `json:"placesOpen"`
+	// SidebarOrder is the order of the sections of the sidebar, by their IDs.
+	SidebarOrder []string `json:"sidebarOrder"`
+	// SectionHeights are the heights of the sidebar sections whose edge was
+	// dragged, by ID. The others are as tall as their content.
+	SectionHeights map[string]int `json:"sectionHeights"`
 	// Tabs and ActiveIndex are the single pane of earlier versions. Normalize
 	// moves them into Panes.
 	Tabs        []Tab `json:"tabs,omitempty"`
@@ -123,6 +137,22 @@ type State struct {
 	// QuickAccess keeps the sidebar folders pinned to the Quick access of
 	// Windows. The program writes it, not the page.
 	QuickAccess *QuickAccess `json:"quickAccess,omitempty"`
+}
+
+// GeneralGroup is the ID of the group that always exists.
+const GeneralGroup = "general"
+
+// MaxGroups is how many tab groups there can be.
+const MaxGroups = 50
+
+// Group is a named set of tabs. The window shows one group at a time, with its
+// panes as they were left.
+type Group struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Panes       []Pane  `json:"panes"`
+	FocusedPane int     `json:"focusedPane"`
+	SplitRatio  float64 `json:"splitRatio"`
 }
 
 // QuickAccess is the setting that pins the sidebar folders to the Quick access
@@ -197,6 +227,8 @@ func (s *Store) Load() State {
 func Defaults() State {
 	return State{
 		PreviewOpen:    true,
+		GroupsOpen:     true,
+		PlacesOpen:     true,
 		Theme:          ThemeSystem,
 		KeepWindowSize: true,
 		KeepMaximized:  true,
@@ -221,20 +253,10 @@ func Normalize(value State) State {
 		value.Panes = []Pane{{Tabs: value.Tabs, ActiveIndex: value.ActiveIndex}}
 	}
 	value.Tabs, value.ActiveIndex = nil, 0
-	panes := make([]Pane, 0, MaxPanes)
-	for _, pane := range value.Panes {
-		pane = normalizePane(pane)
-		if len(pane.Tabs) > 0 && len(panes) < MaxPanes {
-			panes = append(panes, pane)
-		}
-	}
-	value.Panes = panes
-	if value.FocusedPane < 0 || value.FocusedPane >= len(panes) {
-		value.FocusedPane = 0
-	}
-	if value.SplitRatio < 0.15 || value.SplitRatio > 0.85 {
-		value.SplitRatio = 0.5
-	}
+	value.Panes, value.FocusedPane, value.SplitRatio = normalizePanes(value.Panes, value.FocusedPane, value.SplitRatio)
+	value.Groups, value.ActiveGroup = normalizeGroups(value)
+	value.SidebarOrder = normalizeSidebarOrder(value.SidebarOrder)
+	value.SectionHeights = normalizeSectionHeights(value.SectionHeights, value.RecentHeight)
 
 	value.Places = uniquePaths(value.Places, MaxPlaces)
 	value.RemovedDrives = uniquePaths(value.RemovedDrives, 26)
@@ -276,6 +298,111 @@ func Normalize(value State) State {
 		}
 	}
 	return value
+}
+
+func normalizePanes(list []Pane, focused int, ratio float64) ([]Pane, int, float64) {
+	panes := make([]Pane, 0, MaxPanes)
+	for _, pane := range list {
+		pane = normalizePane(pane)
+		if len(pane.Tabs) > 0 && len(panes) < MaxPanes {
+			panes = append(panes, pane)
+		}
+	}
+	if focused < 0 || focused >= len(panes) {
+		focused = 0
+	}
+	if ratio < 0.15 || ratio > 0.85 {
+		ratio = 0.5
+	}
+	return panes, focused, ratio
+}
+
+// normalizeGroups keeps the groups in their order and makes sure General is
+// there. A file from before groups has its tabs put in it, first.
+func normalizeGroups(value State) ([]Group, string) {
+	groups := make([]Group, 0, len(value.Groups)+1)
+	seen := map[string]bool{}
+	for _, group := range value.Groups {
+		group.ID = strings.TrimSpace(group.ID)
+		group.Name = strings.TrimSpace(group.Name)
+		if group.ID == "" || len(group.ID) > 64 || seen[group.ID] || len(groups) >= MaxGroups {
+			continue
+		}
+		if len([]rune(group.Name)) > 60 {
+			group.Name = string([]rune(group.Name)[:60])
+		}
+		if group.Name == "" {
+			group.Name = "Group"
+		}
+		seen[group.ID] = true
+		group.Panes, group.FocusedPane, group.SplitRatio = normalizePanes(group.Panes, group.FocusedPane, group.SplitRatio)
+		groups = append(groups, group)
+	}
+	if !seen[GeneralGroup] {
+		if len(groups) >= MaxGroups {
+			groups = groups[:MaxGroups-1]
+		}
+		general := Group{
+			ID:          GeneralGroup,
+			Name:        "General",
+			Panes:       value.Panes,
+			FocusedPane: value.FocusedPane,
+			SplitRatio:  value.SplitRatio,
+		}
+		general.Panes, general.FocusedPane, general.SplitRatio = normalizePanes(general.Panes, general.FocusedPane, general.SplitRatio)
+		groups = append([]Group{general}, groups...)
+		seen[GeneralGroup] = true
+	}
+	active := value.ActiveGroup
+	if !seen[active] {
+		active = GeneralGroup
+	}
+	return groups, active
+}
+
+// SidebarSections are the sections of the sidebar in their first order.
+var SidebarSections = []string{"groups", "places", "recent"}
+
+// normalizeSidebarOrder keeps the known sections in the saved order, and puts
+// sections that are new since then where they are in the first order.
+func normalizeSidebarOrder(order []string) []string {
+	known := map[string]bool{}
+	for _, id := range SidebarSections {
+		known[id] = true
+	}
+	out := make([]string, 0, len(SidebarSections))
+	seen := map[string]bool{}
+	for _, id := range order {
+		if known[id] && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for i, id := range SidebarSections {
+		if seen[id] {
+			continue
+		}
+		at := min(i, len(out))
+		out = append(out[:at], append([]string{id}, out[at:]...)...)
+		seen[id] = true
+	}
+	return out
+}
+
+// normalizeSectionHeights keeps heights of known sections in range. Recent
+// had its own height before the others could have one, which it keeps.
+func normalizeSectionHeights(heights map[string]int, recentHeight int) map[string]int {
+	out := map[string]int{}
+	for _, id := range SidebarSections {
+		if height, ok := heights[id]; ok && height >= 40 && height <= 3000 {
+			out[id] = height
+		}
+	}
+	// A file without the heights is from before, so the history keeps its own.
+	if heights == nil && recentHeight > 0 {
+		out["recent"] = recentHeight
+	}
+	return out
 }
 
 func normalizeTerminals(list []Terminal) []Terminal {

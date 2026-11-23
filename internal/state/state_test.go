@@ -82,3 +82,71 @@ func TestNormalizeKeepsNewestFolderViews(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizePutsOldTabsInTheGeneralGroup(t *testing.T) {
+	got := Normalize(State{
+		Panes:       []Pane{{Tabs: []Tab{{Path: `C:\a`}}}, {Tabs: []Tab{{Path: `D:\b`}}}},
+		FocusedPane: 1,
+		SplitRatio:  0.3,
+		ActiveGroup: "missing",
+	})
+	if len(got.Groups) != 1 || got.Groups[0].ID != GeneralGroup || got.ActiveGroup != GeneralGroup {
+		t.Fatalf("groups %+v active %q", got.Groups, got.ActiveGroup)
+	}
+	general := got.Groups[0]
+	if len(general.Panes) != 2 || general.FocusedPane != 1 || general.SplitRatio != 0.3 {
+		t.Errorf("general %+v", general)
+	}
+}
+
+func TestNormalizeKeepsTheOrderAndDropsRepeats(t *testing.T) {
+	got := Normalize(State{
+		Groups: []Group{
+			{ID: "work", Name: "  Work  ", Panes: []Pane{{Tabs: []Tab{{Path: `C:\w`}}}}},
+			{ID: "work", Name: "Again"},
+			{ID: "", Name: "No ID"},
+			{ID: GeneralGroup, Name: "Mine"},
+			{ID: "empty", Name: ""},
+		},
+		ActiveGroup: "work",
+	})
+	if len(got.Groups) != 3 {
+		t.Fatalf("groups %+v", got.Groups)
+	}
+	if got.Groups[0].Name != "Work" || len(got.Groups[0].Panes) != 1 {
+		t.Errorf("first %+v", got.Groups[0])
+	}
+	if got.Groups[1].ID != GeneralGroup || got.Groups[1].Name != "Mine" || got.Groups[2].Name != "Group" {
+		t.Errorf("rest %+v", got.Groups[1:])
+	}
+	if got.ActiveGroup != "work" {
+		t.Errorf("active %q", got.ActiveGroup)
+	}
+}
+
+func TestNormalizeSidebarOrder(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{nil, "groups places recent"},
+		{[]string{"recent", "odd", "places", "recent"}, "groups recent places"},
+		{[]string{"recent", "groups"}, "recent places groups"},
+	}
+	for _, c := range cases {
+		if got := fmt.Sprint(normalizeSidebarOrder(c.in)); got != "["+c.want+"]" {
+			t.Errorf("%v: got %s, want [%s]", c.in, got, c.want)
+		}
+	}
+}
+
+func TestNormalizeSectionHeights(t *testing.T) {
+	got := normalizeSectionHeights(nil, 219)
+	if len(got) != 1 || got["recent"] != 219 {
+		t.Errorf("old file: %v", got)
+	}
+	got = normalizeSectionHeights(map[string]int{"places": 300, "odd": 100, "groups": 5}, 219)
+	if len(got) != 1 || got["places"] != 300 {
+		t.Errorf("new file: %v", got)
+	}
+}

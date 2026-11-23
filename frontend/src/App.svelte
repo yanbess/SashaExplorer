@@ -78,9 +78,27 @@
     activeId: string
   }
 
+  /** A tab group. The window shows one group, whose panes are then in `panes`;
+   *  a group keeps its panes here while another one is shown. */
+  interface Group {
+    id: string
+    name: string
+    panes: Pane[]
+    focusedId: string
+    splitRatio: number
+  }
+
+  /** The group that always exists. */
+  const GENERAL = 'general'
+
   let panes = $state<Pane[]>([])
   let focusedId = $state('')
   let splitRatio = $state(0.5)
+  let groups = $state<Group[]>([])
+  let activeGroupId = $state(GENERAL)
+  let groupsOpen = $state(true)
+  let placesOpen = $state(true)
+  let sidebarOrder = $state<string[]>(['groups', 'places', 'recent'])
   let places = $state<string[]>([])
   let removedDrives = $state<string[]>([])
   let recent = $state<string[]>([])
@@ -105,6 +123,8 @@
   let fallbackTerminal = $state('')
   let recentOpen = $state(false)
   let recentHeight = $state(220)
+  /** Heights of sidebar sections set by dragging their edge. */
+  let sectionHeights = $state<Record<string, number>>({})
   /** Found terminals the user took out of the list. */
   let hiddenTerminals = $state<string[]>([])
   let theme = $state<Theme>('system')
@@ -486,7 +506,8 @@
   }
 
   function findTab(id: string): Tab | undefined {
-    for (const pane of panes) {
+    // Tabs of other groups go on searching and counting sizes too.
+    for (const pane of [...panes, ...groups.flatMap((group) => group.panes)]) {
       const tab = pane.tabs.find((item) => item.id === id)
       if (tab) return tab
     }
@@ -812,6 +833,189 @@
     }
     handle.addEventListener('pointermove', move)
     handle.addEventListener('pointerup', up)
+  }
+
+  // ----- Tab groups -----
+
+  function panesOf(group: Group): Pane[] {
+    return group.id === activeGroupId ? panes : group.panes
+  }
+
+  function tabCount(group: Group): number {
+    return panesOf(group).reduce((sum, pane) => sum + pane.tabs.length, 0)
+  }
+
+  function groupById(id: string): Group | undefined {
+    return groups.find((group) => group.id === id)
+  }
+
+  /** Puts the shown panes back into their group and shows another group as it
+   *  was left. A group without tabs starts with This PC. */
+  function showGroup(id: string) {
+    if (id === activeGroupId) return
+    const target = groupById(id)
+    if (!target) return
+    const current = groupById(activeGroupId)
+    if (current) {
+      current.panes = panes
+      current.focusedId = focusedId
+      current.splitRatio = splitRatio
+    }
+    const next = target.panes.length > 0 ? target.panes : [newPane([newTab(THIS_PC)])]
+    target.panes = []
+    activeGroupId = id
+    splitRatio = target.splitRatio || DEFAULT_SPLIT
+    panes = next
+    if (panes.length < 2) api.Watch(1, '')
+    showPanes(target.focusedId)
+  }
+
+  /** Each pane loads its tab; the focused one comes last, so it keeps the focus. */
+  function showPanes(focus: string) {
+    const focusPane = panes.find((pane) => pane.id === focus) ?? panes[0]
+    for (const pane of panes) if (pane !== focusPane) activateTab(pane, pane.activeId)
+    activateTab(focusPane, focusPane.activeId)
+  }
+
+  function nextGroupName(): string {
+    for (let n = groups.length; ; n++) {
+      const name = `Group ${n}`
+      if (!groups.some((group) => group.name.toLowerCase() === name.toLowerCase())) return name
+    }
+  }
+
+  /** Asks for a name and shows the new group. A tab given moves into it. */
+  function createGroup(tab?: { pane: Pane; id: string }) {
+    confirm = {
+      title: 'New group',
+      inputLabel: 'Name',
+      inputValue: nextGroupName(),
+      confirmLabel: 'Create',
+      onconfirm: (name) => {
+        const id = crypto.randomUUID()
+        groups.push({ id, name, panes: [], focusedId: '', splitRatio: DEFAULT_SPLIT })
+        if (tab) moveTabToGroup(tab.pane, tab.id, id, false)
+        showGroup(id)
+      },
+    }
+  }
+
+  function renameGroup(id: string) {
+    const group = groupById(id)
+    if (!group) return
+    confirm = {
+      title: 'Rename group',
+      inputLabel: 'Name',
+      inputValue: group.name,
+      confirmLabel: 'Rename',
+      onconfirm: (name) => {
+        group.name = name
+      },
+    }
+  }
+
+  /** A group with tabs asks whether they close or move to General. */
+  function deleteGroup(id: string) {
+    const group = groupById(id)
+    const general = groupById(GENERAL)
+    if (!group || !general || id === GENERAL) return
+    const count = tabCount(group)
+    if (count === 0) {
+      removeGroup(group, false)
+      return
+    }
+    confirm = {
+      title: `Delete the group "${group.name}"?`,
+      message: `It has ${count} ${count === 1 ? 'tab' : 'tabs'}. They can move to "${general.name}" or close with the group.`,
+      confirmLabel: count === 1 ? 'Close the tab' : 'Close the tabs',
+      danger: true,
+      onconfirm: () => removeGroup(group, false),
+      altLabel: `Move to ${general.name}`,
+      onalt: () => removeGroup(group, true),
+    }
+  }
+
+  function removeGroup(group: Group, keepTabs: boolean) {
+    if (group.id === activeGroupId) showGroup(GENERAL)
+    const tabs = group.panes.flatMap((pane) => pane.tabs)
+    groups = groups.filter((other) => other.id !== group.id)
+    if (!keepTabs) {
+      for (const tab of tabs) {
+        api.CancelFolderSizes(tab.id)
+        if (tab.search?.running) api.CancelSearch(tab.id)
+      }
+      return
+    }
+    const general = groupById(GENERAL)
+    if (general) addToGroup(general, tabs)
+  }
+
+  /** Adds tabs at the end of the first pane of a group; pinned ones join its
+   *  pinned tabs in front. Returns that pane. */
+  function addToGroup(group: Group, tabs: Tab[]): Pane | undefined {
+    if (tabs.length === 0) return
+    const list = panesOf(group)
+    if (list.length === 0) list.push(newPane([]))
+    const pane = list[0]
+    pane.tabs.splice(pinnedCount(pane), 0, ...tabs.filter((tab) => tab.pinned))
+    pane.tabs.push(...tabs.filter((tab) => !tab.pinned))
+    if (!pane.tabs.some((tab) => tab.id === pane.activeId)) pane.activeId = tabs[0].id
+    return pane
+  }
+
+  /** Moves a tab of the shown group into another one, where it becomes the
+   *  active tab. The pane it leaves keeps a tab, as when one closes. */
+  function moveTabToGroup(from: Pane, tabId: string, groupId: string, tell = true) {
+    const group = groupById(groupId)
+    if (!group || groupId === activeGroupId) return
+    const index = from.tabs.findIndex((tab) => tab.id === tabId)
+    if (index < 0) return
+    const [tab] = from.tabs.splice(index, 1)
+    const pane = addToGroup(group, [tab])
+    if (pane) {
+      pane.activeId = tab.id
+      group.focusedId = pane.id
+    }
+    if (from.activeId === tabId) from.activeId = from.tabs[Math.min(index, from.tabs.length - 1)]?.id ?? ''
+    if (from.tabs.length === 0) {
+      if (panes.length > 1) {
+        removePane(from)
+        if (tell) showToast(`Moved to ${group.name}`, false)
+        return
+      }
+      from.tabs.push(newTab(THIS_PC))
+      from.activeId = from.tabs[0].id
+    }
+    activateTab(from, from.activeId)
+    if (tell) showToast(`Moved to ${group.name}`, false)
+  }
+
+  /** Moves an item of a list before the one at an index, or to the end. */
+  function moveBefore<T>(list: T[], item: T, before: number): T[] {
+    const from = list.indexOf(item)
+    if (from < 0) return list
+    const next = [...list]
+    next.splice(from, 1)
+    next.splice(from < before ? before - 1 : before, 0, item)
+    return next
+  }
+
+  function moveGroup(id: string, before: number) {
+    const group = groupById(id)
+    if (group) groups = moveBefore(groups, group, before)
+  }
+
+  function moveSection(id: string, before: number) {
+    sidebarOrder = moveBefore(sidebarOrder, id, before)
+  }
+
+  /** A tab dragged from the tab bar onto a group in the sidebar. */
+  function dropTabOnGroup(groupId: string) {
+    const dragged = draggingTab
+    draggingTab = null
+    splitZone = null
+    const from = panes.find((pane) => pane.id === dragged?.paneId)
+    if (dragged && from) moveTabToGroup(from, dragged.tabId, groupId)
   }
 
   // ----- Sidebar -----
@@ -1541,14 +1745,34 @@
     return { path: tab.path, pinned: tab.pinned }
   }
 
+  function savedPane(pane: Pane) {
+    return {
+      tabs: pane.tabs.map(savedTab),
+      activeIndex: pane.tabs.findIndex((tab) => tab.id === pane.activeId),
+    }
+  }
+
   function snapshot() {
     return {
-      panes: panes.map((pane) => ({
-        tabs: pane.tabs.map(savedTab),
-        activeIndex: pane.tabs.findIndex((tab) => tab.id === pane.activeId),
-      })),
+      panes: panes.map(savedPane),
       focusedPane: Math.max(0, panes.findIndex((pane) => pane.id === focusedId)),
       splitRatio,
+      groups: groups.map((group) => {
+        const shown = group.id === activeGroupId
+        const list = shown ? panes : group.panes
+        const focus = shown ? focusedId : group.focusedId
+        return {
+          id: group.id,
+          name: group.name,
+          panes: list.map(savedPane),
+          focusedPane: Math.max(0, list.findIndex((pane) => pane.id === focus)),
+          splitRatio: shown ? splitRatio : group.splitRatio,
+        }
+      }),
+      activeGroup: activeGroupId,
+      groupsOpen,
+      placesOpen,
+      sidebarOrder: [...sidebarOrder],
       windowsIcons: !themedIcons,
       places: [...places],
       removedDrives: [...removedDrives],
@@ -1563,6 +1787,7 @@
       folderViews: { ...folderViews },
       recentOpen,
       recentHeight,
+      sectionHeights: { ...sectionHeights },
       hiddenTerminals: [...hiddenTerminals],
       theme,
       keepWindowSize,
@@ -1661,6 +1886,7 @@
         defaultTerminal = saved.defaultTerminal ?? ''
         recentOpen = saved.recentOpen
         recentHeight = saved.recentHeight || 220
+        sectionHeights = saved.sectionHeights ?? {}
         hiddenTerminals = saved.hiddenTerminals ?? []
         theme = (saved.theme || 'system') as Theme
         keepWindowSize = saved.keepWindowSize
@@ -1696,15 +1922,46 @@
           }
         }
 
-        panes = (saved.panes ?? []).map((pane) => {
-          const tabs = (pane.tabs ?? []).map((item) => newTab(item.path, item))
-          return newPane(tabs, tabs[pane.activeIndex]?.id ?? tabs[0]?.id)
-        })
-        if (panes.length === 0) panes = [newPane([newTab(THIS_PC)])]
-        // Each side loads its tab; the focused one comes last, so it keeps the focus.
-        const focusIndex = Math.min(saved.focusedPane, panes.length - 1)
-        panes.forEach((pane, index) => index !== focusIndex && activateTab(pane, pane.activeId))
-        activateTab(panes[focusIndex], panes[focusIndex].activeId)
+        // Tabs of the groups not shown are read when their group is.
+        const toPanes = (list: stateModels.Pane[]) =>
+          list.map((pane) => {
+            const tabs = (pane.tabs ?? []).map((item) => newTab(item.path, item))
+            return newPane(tabs, tabs[pane.activeIndex]?.id ?? tabs[0]?.id)
+          })
+        const toGroup = (group: stateModels.Group): Group => {
+          const list = toPanes(group.panes ?? [])
+          return {
+            id: group.id,
+            name: group.name,
+            panes: list,
+            focusedId: list[Math.min(group.focusedPane, list.length - 1)]?.id ?? '',
+            splitRatio: group.splitRatio || DEFAULT_SPLIT,
+          }
+        }
+        groups = (saved.groups ?? []).map(toGroup)
+        if (!groups.some((group) => group.id === GENERAL)) {
+          groups.unshift(
+            toGroup(
+              stateModels.Group.createFrom({
+                id: GENERAL,
+                name: 'General',
+                panes: saved.panes ?? [],
+                focusedPane: saved.focusedPane,
+                splitRatio: saved.splitRatio,
+              }),
+            ),
+          )
+        }
+        groupsOpen = saved.groupsOpen
+        placesOpen = saved.placesOpen
+        if (saved.sidebarOrder?.length) sidebarOrder = saved.sidebarOrder
+        const shown = groups.find((group) => group.id === saved.activeGroup) ?? groups[0]
+        activeGroupId = shown.id
+        splitRatio = shown.splitRatio
+        panes = shown.panes.length > 0 ? shown.panes : [newPane([newTab(THIS_PC)])]
+        const focus = shown.focusedId
+        shown.panes = []
+        showPanes(focus)
         undoState = await api.UndoState()
         ready = true
         if (startup.paths?.length) await openPaths(startup.paths)
@@ -1751,6 +2008,8 @@
       draggingTab = null
       splitZone = null
     }}
+    groups={groups.filter((group) => group.id !== activeGroupId).map(({ id, name }) => ({ id, name }))}
+    onmovetogroup={(id, groupId) => (groupId ? moveTabToGroup(pane, id, groupId) : createGroup({ pane, id }))}
     onreceive={(targetId, after) => {
       const dragged = draggingTab
       draggingTab = null
@@ -2013,8 +2272,13 @@
       {terminalName}
       {recentOpen}
       ontogglerecent={() => (recentOpen = !recentOpen)}
-      {recentHeight}
-      onrecentheight={(height) => (recentHeight = height)}
+      {sectionHeights}
+      onsectionheight={(id, height) => {
+        const next = { ...sectionHeights }
+        if (height === null) delete next[id]
+        else next[id] = height
+        sectionHeights = next
+      }}
       {folderPaths}
       onopen={openPlace}
       onaddplaces={addPlaces}
@@ -2032,6 +2296,21 @@
       onbinexplorer={openBinInExplorer}
       onemptybin={emptyRecycleBin}
       ondropbin={(paths) => dropOnBin(paths)}
+      groups={groups.map((group) => ({ id: group.id, name: group.name, tabs: tabCount(group) }))}
+      activeGroup={activeGroupId}
+      {groupsOpen}
+      ontogglegroups={() => (groupsOpen = !groupsOpen)}
+      onshowgroup={showGroup}
+      onnewgroup={() => createGroup()}
+      onrenamegroup={renameGroup}
+      ondeletegroup={deleteGroup}
+      tabDragging={!!draggingTab}
+      ondroptab={dropTabOnGroup}
+      onmovegroup={moveGroup}
+      {placesOpen}
+      ontoggleplaces={() => (placesOpen = !placesOpen)}
+      order={sidebarOrder}
+      onmovesection={moveSection}
     />
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="splitter side-splitter" title="Drag to resize, double-click for the first size" onpointerdown={(event) => startResize(event, 'sidebar')} ondblclick={() => resetSize('sidebar')}></div>

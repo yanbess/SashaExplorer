@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import { hasOwnIcon } from './util'
+
   /** Kinds of items that get their own drawing and color. */
   type Kind =
     | 'folder'
@@ -85,6 +87,27 @@
     if (drive) return 'drive'
     if (entry.dir) return 'folder'
     return EXTENSIONS[entry.ext] ?? 'file'
+  }
+
+  /** Projects of well-known programs are recognized by the program's icon
+   *  better than by a drawing of a kind. */
+  const PROGRAM_FILES = new Set(
+    (
+      'psd psb ai indd idml prproj aep aepx prel sesx fla xd lrcat ' +
+      'blend c4d max ma mb ztl spp sbs fig sketch afphoto afdesign afpub ' +
+      'kra xcf cdr dwg dxf skp 3dm drp veg mlt flp als ptx sln csproj ' +
+      'vcxproj ipynb torrent'
+    )
+      .split(' ')
+      .map((ext) => '.' + ext),
+  )
+
+  /** Whether an item shows its Windows icon while the app draws its own:
+   *  programs and shortcuts, projects of known programs, and types the app
+   *  has no drawing for, which Windows knows by the program that opens them. */
+  export function prefersWindowsIcon(entry: { dir: boolean; ext: string }): boolean {
+    if (entry.dir || !entry.ext) return false
+    return hasOwnIcon(entry) || PROGRAM_FILES.has(entry.ext) || !EXTENSIONS[entry.ext]
   }
 </script>
 

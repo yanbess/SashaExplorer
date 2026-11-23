@@ -43,6 +43,10 @@
     /** A tab of the other pane was dropped here, before or after targetId. */
     onreceive: (targetId: string | null, after: boolean) => void
     focused: boolean
+    /** The other tab groups, which a tab can move to. */
+    groups: { id: string; name: string }[]
+    /** Moves a tab to a group, or to a new one when groupId is null. */
+    onmovetogroup: (id: string, groupId: string | null) => void
   }
 
   let {
@@ -61,7 +65,27 @@
     ondragtabend,
     onreceive,
     focused,
+    groups,
+    onmovetogroup,
   }: Props = $props()
+
+  /** The menu has no submenus, so the groups come in a second menu at the same place. */
+  function groupMenu(x: number, y: number, tab: TabInfo) {
+    // After the first menu has closed, so the second one opens fresh.
+    setTimeout(() => showGroupMenu(x, y, tab))
+  }
+
+  function showGroupMenu(x: number, y: number, tab: TabInfo) {
+    menu = {
+      x,
+      y,
+      items: [
+        ...groups.map((group) => ({ label: group.name, action: () => onmovetogroup(tab.id, group.id) })),
+        ...(groups.length > 0 ? ['separator' as const] : []),
+        { label: 'New group…', action: () => onmovetogroup(tab.id, null) },
+      ],
+    }
+  }
 
   /** Holding files over a tab for a moment opens it, to drop into its folder. */
   const HOVER_OPEN_MS = 600
@@ -165,6 +189,7 @@
         { label: tab.pinned ? 'Unpin tab' : 'Pin tab', action: run('pin') },
         ...(terminalName && tab.path && tab.path !== RECYCLE_BIN ? [{ label: `Open in ${terminalName}`, action: run('terminal') }] : []),
         { label: split ? 'Move to other side' : 'Open to the side', hint: split ? '' : 'Ctrl+\\', action: run('split') },
+        { label: 'Move to group…', action: () => groupMenu(event.clientX, event.clientY, tab) },
         'separator',
         { label: 'Close', hint: 'Ctrl+W', action: run('close') },
         { label: 'Close others', disabled: !hasOthers, action: run('closeOthers') },

@@ -40,12 +40,12 @@
 </script>
 
 <script lang="ts">
-  import { tick, untrack } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import Icon from './Icon.svelte'
   import { dropTarget, startNativeDrag, type DropHandler } from './drag'
-  import FileIcon from './FileIcon.svelte'
+  import FileIcon, { prefersWindowsIcon } from './FileIcon.svelte'
   import FolderThumb from './FolderThumb.svelte'
-  import { formatDate, formatSize, hasOwnIcon, hasPicture, iconUrl, parentPath, thumbUrl } from './util'
+  import { formatDate, formatSize, hasPicture, iconUrl, parentPath, thumbUrl } from './util'
 
   interface Props {
     path: string
@@ -233,6 +233,12 @@
     }
     if (event.button !== 0 && event.button !== 2) return
     scroller?.focus({ preventScroll: true })
+    // In details, the room of a row beside its icon and name draws a rectangle,
+    // as in Explorer; the name and the icon pick the item up.
+    if (event.button === 0 && view === 'details' && renaming !== entry.path && !onNameOrIcon(event)) {
+      startMarquee(event, entry)
+      return
+    }
     if (event.button === 0 && renaming !== entry.path) press = { x: event.clientX, y: event.clientY, entry }
     if (event.button === 2) {
       if (!selected.has(entry.path)) select([entry.path], entry.path, entry.path)
@@ -255,6 +261,10 @@
   /** A plain click on a selected item keeps the others until the button is up,
    *  so a drag can take them all. */
   function itemClick(event: MouseEvent, entry: Entry) {
+    if (marqueeClickDone) {
+      marqueeClickDone = false
+      return
+    }
     if (event.shiftKey || event.ctrlKey) return
     if (selection.selected.length > 1 || selection.focus !== entry.path) select([entry.path], entry.path, entry.path)
   }
@@ -268,9 +278,188 @@
 
   function backgroundMouseDown(event: MouseEvent) {
     if (event.target !== event.currentTarget && !(event.target as HTMLElement).classList.contains('canvas')) return
+    // The scroll bars belong to the scroller too, and a press on them scrolls.
+    if (scroller) {
+      const box = scroller.getBoundingClientRect()
+      if (event.clientX - box.left >= scroller.clientLeft + scroller.clientWidth) return
+      if (event.clientY - box.top >= scroller.clientTop + scroller.clientHeight) return
+    }
     if (event.button === 0 && !event.ctrlKey && !event.shiftKey) select([], '', '')
     if (event.button === 2) select([], '', '')
+    if (event.button === 0) startMarquee(event, null)
   }
+
+  // ----- Selection by drawing a rectangle -----
+
+  /** The rectangle being drawn, in the coordinates of the canvas. */
+  let marquee = $state<{ left: number; top: number; width: number; height: number } | null>(null)
+  let canvas = $state<HTMLElement>()
+  let drawing: {
+    /** Where the press was, in the canvas. */
+    x: number
+    y: number
+    clientX: number
+    clientY: number
+    /** The selection before, which Ctrl and Shift keep. */
+    base: string[]
+    mode: 'replace' | 'add' | 'toggle'
+    /** The row the press was on, in details, which a plain click selects. */
+    entry: Entry | null
+    ctrl: boolean
+    shift: boolean
+    started: boolean
+  } | null = null
+  let pointer = { x: 0, y: 0 }
+  let scrollFrame = 0
+  /** A press that drew nothing ends as a click on its row, and the click event
+   *  that follows has nothing more to do. */
+  let marqueeClickDone = false
+  const EDGE = 24
+
+  function onNameOrIcon(event: MouseEvent): boolean {
+    const target = event.target as HTMLElement
+    return !!target.closest('.name, .rename, .name-cell > :first-child')
+  }
+
+  function startMarquee(event: MouseEvent, entry: Entry | null) {
+    if (!canvas) return
+    event.preventDefault()
+    scroller?.focus({ preventScroll: true })
+    const box = canvas.getBoundingClientRect()
+    drawing = {
+      x: event.clientX - box.left,
+      y: event.clientY - box.top,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      base: event.ctrlKey || event.shiftKey ? [...selection.selected] : [],
+      mode: event.ctrlKey ? 'toggle' : event.shiftKey ? 'add' : 'replace',
+      entry,
+      ctrl: event.ctrlKey,
+      shift: event.shiftKey,
+      started: false,
+    }
+    pointer = { x: event.clientX, y: event.clientY }
+    window.addEventListener('mousemove', marqueeMove)
+    window.addEventListener('mouseup', marqueeEnd)
+  }
+
+  function marqueeMove(event: MouseEvent) {
+    if (!drawing) return
+    if ((event.buttons & 1) === 0) {
+      marqueeEnd()
+      return
+    }
+    pointer = { x: event.clientX, y: event.clientY }
+    if (!drawing.started) {
+      if (Math.hypot(event.clientX - drawing.clientX, event.clientY - drawing.clientY) < DRAG_DISTANCE) return
+      drawing.started = true
+    }
+    updateMarquee()
+    if (!scrollFrame) scrollFrame = requestAnimationFrame(autoScroll)
+  }
+
+  /** Near the top or bottom edge, or past it, the list scrolls, faster the
+   *  further out the pointer is. */
+  function autoScroll() {
+    scrollFrame = 0
+    if (!drawing?.started || !scroller) return
+    const box = scroller.getBoundingClientRect()
+    const viewTop = box.top + (view === 'details' ? HEADER : 0)
+    let step = 0
+    if (pointer.y < viewTop + EDGE) step = -Math.ceil((viewTop + EDGE - pointer.y) / 3)
+    else if (pointer.y > box.bottom - EDGE) step = Math.ceil((pointer.y - box.bottom + EDGE) / 3)
+    if (step === 0) return
+    const before = scroller.scrollTop
+    scroller.scrollTop += Math.max(-60, Math.min(60, step))
+    if (scroller.scrollTop !== before) {
+      scrollTop = scroller.scrollTop
+      updateMarquee()
+    }
+    scrollFrame = requestAnimationFrame(autoScroll)
+  }
+
+  function updateMarquee() {
+    if (!drawing?.started || !canvas) return
+    const box = canvas.getBoundingClientRect()
+    const x = Math.max(0, Math.min(box.width, pointer.x - box.left))
+    const y = Math.max(0, Math.min(Math.max(box.height, drawing.y), pointer.y - box.top))
+    const left = Math.min(x, drawing.x)
+    const top = Math.min(y, drawing.y)
+    marquee = { left, top, width: Math.abs(x - drawing.x), height: Math.abs(y - drawing.y) }
+    const hits = hitsIn(left, top, left + marquee.width, top + marquee.height)
+    let next: string[]
+    if (drawing.mode === 'replace') next = hits
+    else if (drawing.mode === 'add') next = [...new Set([...drawing.base, ...hits])]
+    else {
+      const hit = new Set(hits)
+      const base = new Set(drawing.base)
+      next = [...drawing.base.filter((path) => !hit.has(path)), ...hits.filter((path) => !base.has(path))]
+    }
+    if (next.length === selection.selected.length && next.every((path, i) => path === selection.selected[i])) return
+    const focus = hits.at(-1) ?? selection.focus
+    select(next, hits[0] ?? selection.anchor, focus)
+  }
+
+  /** The items a rectangle of the canvas touches, in list order. */
+  function hitsIn(left: number, top: number, right: number, bottom: number): string[] {
+    const paths: string[] = []
+    if (!grid) {
+      const first = Math.max(0, Math.floor(top / ROW))
+      const last = Math.min(entries.length - 1, Math.floor(bottom / ROW))
+      for (let i = first; i <= last; i++) paths.push(entries[i].path)
+      return paths
+    }
+    const tileHeight = thumbHeight + caption
+    const firstRow = Math.max(0, Math.floor((top - PAD - tileHeight) / rowHeight))
+    const lastRow = Math.min(rowCount - 1, Math.floor((bottom - PAD) / rowHeight))
+    for (let row = firstRow; row <= lastRow; row++) {
+      const rowTop = PAD + row * rowHeight
+      if (rowTop > bottom || rowTop + tileHeight < top) continue
+      for (let col = 0; col < cols; col++) {
+        const index = row * cols + col
+        if (index >= entries.length) break
+        const tileLeft = PAD + col * (tileWidth + GAP)
+        if (tileLeft <= right && tileLeft + tileWidth >= left) paths.push(entries[index].path)
+      }
+    }
+    return paths
+  }
+
+  function marqueeEnd() {
+    window.removeEventListener('mousemove', marqueeMove)
+    window.removeEventListener('mouseup', marqueeEnd)
+    cancelAnimationFrame(scrollFrame)
+    scrollFrame = 0
+    const ended = drawing
+    drawing = null
+    marquee = null
+    if (!ended?.entry) return
+    // The click that follows, if the button came up on the same row, is
+    // this press, done here. Another row gets no click, so the mark goes.
+    marqueeClickDone = true
+    setTimeout(() => (marqueeClickDone = false))
+    if (ended.started) return
+    // Nothing was drawn: a click on the row, as on its name.
+    const entry = ended.entry
+    if (ended.shift) {
+      const span = range(selection.anchor || entry.path, entry.path)
+      const next = ended.ctrl ? [...new Set([...selection.selected, ...span])] : span
+      select(next, selection.anchor || entry.path, entry.path)
+    } else if (ended.ctrl) {
+      const next = selected.has(entry.path)
+        ? selection.selected.filter((item) => item !== entry.path)
+        : [...selection.selected, entry.path]
+      select(next, entry.path, entry.path)
+    } else {
+      select([entry.path], entry.path, entry.path)
+    }
+  }
+
+  onDestroy(() => {
+    window.removeEventListener('mousemove', marqueeMove)
+    window.removeEventListener('mouseup', marqueeEnd)
+    cancelAnimationFrame(scrollFrame)
+  })
 
   function contextMenu(event: MouseEvent, entry: Entry | null) {
     event.preventDefault()
@@ -514,7 +703,10 @@
   bind:this={scroller}
   bind:clientHeight={height}
   bind:clientWidth={width}
-  onscroll={() => (scrollTop = scroller?.scrollTop ?? 0)}
+  onscroll={() => {
+    scrollTop = scroller?.scrollTop ?? 0
+    updateMarquee()
+  }}
   onkeydown={keydown}
   onmousedown={backgroundMouseDown}
   oncontextmenu={(event) => contextMenu(event, null)}
@@ -544,7 +736,16 @@
     </div>
   {/if}
 
-  <div class="canvas" style:height={`${rowCount * rowHeight + (grid ? PAD * 2 : 0)}px`}>
+  <div class="canvas" bind:this={canvas} style:height={`${rowCount * rowHeight + (grid ? PAD * 2 : 0)}px`}>
+    {#if marquee}
+      <div
+        class="marquee"
+        style:left={`${marquee.left}px`}
+        style:top={`${marquee.top}px`}
+        style:width={`${marquee.width}px`}
+        style:height={`${marquee.height}px`}
+      ></div>
+    {/if}
     {#each shown as { entry, index } (entry.path)}
       {@const row = Math.floor(index / cols)}
       {@const col = index % cols}
@@ -575,7 +776,7 @@
       >
         {#if view === 'details'}
           <span class="name-cell" style:gap={`${spacing}px`}>
-            {#if themed && !hasOwnIcon(entry)}
+            {#if themed && !prefersWindowsIcon(entry)}
               <FileIcon {entry} drive={drives?.has(entry.path)} size={18} />
             {:else}
               <img class="small-icon" src={iconUrl(entry, 32)} alt="" draggable="false" onerror={imageFailed} />
@@ -627,7 +828,7 @@
                   <FolderThumb folder={entry} {size} />
                 {/if}
               </span>
-            {:else if themed && !hasPicture(entry) && !hasOwnIcon(entry)}
+            {:else if themed && !hasPicture(entry) && !prefersWindowsIcon(entry)}
               {@const size = Math.round(Math.min(thumbHeight * 0.72, 140))}
               <span class="glyph" style:margin-bottom={`${-size * TRIM.file}px`}><FileIcon {entry} {size} /></span>
             {:else}
@@ -743,6 +944,17 @@
   .canvas {
     position: relative;
     min-width: 300px;
+  }
+
+  /* Above the items, and the pointer goes through to nothing: the drag is
+     followed on the window. */
+  .marquee {
+    position: absolute;
+    z-index: 1;
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    pointer-events: none;
   }
 
   .gallery .canvas,

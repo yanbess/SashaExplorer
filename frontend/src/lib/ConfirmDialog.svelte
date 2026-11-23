@@ -10,6 +10,9 @@
     confirmLabel: string
     danger?: boolean
     onconfirm: (value: string) => void | Promise<void>
+    /** A second way to go on, shown between Cancel and the main button. */
+    altLabel?: string
+    onalt?: () => void | Promise<void>
   }
 </script>
 
@@ -44,6 +47,15 @@
       error = errorText(e)
     }
   }
+
+  async function alternative() {
+    try {
+      await config.onalt?.()
+      onclose()
+    } catch (e) {
+      error = errorText(e)
+    }
+  }
 </script>
 
 <dialog use:open oncancel={onclose}>
@@ -63,6 +75,9 @@
     {/if}
     <div class="actions">
       <button type="button" onclick={onclose}>Cancel</button>
+      {#if config.altLabel}
+        <button type="button" onclick={alternative}>{config.altLabel}</button>
+      {/if}
       <button
         type="submit"
         class={config.danger ? 'danger' : 'primary'}

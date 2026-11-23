@@ -25,9 +25,11 @@
     /** The list of recent folders is shown; folded, only its title is. */
     recentOpen: boolean
     ontogglerecent: () => void
-    /** The height of the shown history, which its top edge changes. */
-    recentHeight: number
-    onrecentheight: (height: number) => void
+    /** Heights of the open sections whose bottom edge was dragged, by ID. A
+     *  section without one is as tall as its content. */
+    sectionHeights: Record<string, number>
+    /** Sets the height of a section, or null for its first height. */
+    onsectionheight: (id: string, height: number | null) => void
     folderPaths: (paths: string[]) => string[]
     onopen: (path: string, newTab: boolean) => void
     onaddplaces: (paths: string[], before: number) => void
@@ -47,6 +49,25 @@
     onemptybin: () => void
     /** Items dropped on the Recycle Bin go there. */
     ondropbin: DropHandler
+    /** The tab groups with their numbers of tabs. The first is General. */
+    groups: { id: string; name: string; tabs: number }[]
+    activeGroup: string
+    groupsOpen: boolean
+    ontogglegroups: () => void
+    onshowgroup: (id: string) => void
+    onnewgroup: () => void
+    onrenamegroup: (id: string) => void
+    ondeletegroup: (id: string) => void
+    /** A tab is being dragged, which a group takes. */
+    tabDragging: boolean
+    ondroptab: (groupId: string) => void
+    /** Moves a group before the one at an index, or to the end. */
+    onmovegroup: (id: string, before: number) => void
+    placesOpen: boolean
+    ontoggleplaces: () => void
+    /** The sections in their order, by ID. */
+    order: string[]
+    onmovesection: (id: string, before: number) => void
   }
 
   let {
@@ -56,8 +77,8 @@
     terminalName,
     recentOpen,
     ontogglerecent,
-    recentHeight,
-    onrecentheight,
+    sectionHeights,
+    onsectionheight,
     folderPaths,
     onopen,
     onaddplaces,
@@ -75,7 +96,182 @@
     onbinexplorer,
     onemptybin,
     ondropbin,
+    groups,
+    activeGroup,
+    groupsOpen,
+    ontogglegroups,
+    onshowgroup,
+    onnewgroup,
+    onrenamegroup,
+    ondeletegroup,
+    tabDragging,
+    ondroptab,
+    onmovegroup,
+    placesOpen,
+    ontoggleplaces,
+    order,
+    onmovesection,
   }: Props = $props()
+
+  const GENERAL = 'general'
+  let shownGroup = $derived(groups.find((group) => group.id === activeGroup))
+  /** The group a dragged tab is over. */
+  let dropGroup = $state('')
+
+  // A group takes a tab dragged from the tab bar, and groups dragged among
+  // themselves change their order.
+  const GROUP_TYPE = 'application/x-sasha-group'
+  let draggedGroup = $state('')
+  /** Where a dragged group would go: an index into groups, or -1. */
+  let groupInsert = $state(-1)
+
+  function groupDragStart(event: DragEvent, id: string) {
+    draggedGroup = id
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData(GROUP_TYPE, id)
+    }
+  }
+
+  function groupDragEnd() {
+    draggedGroup = ''
+    groupInsert = -1
+  }
+
+  function groupDragOver(event: DragEvent, id: string, index: number) {
+    if (draggedGroup) {
+      event.preventDefault()
+      event.stopPropagation()
+      const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
+      groupInsert = event.clientY < box.top + box.height / 2 ? index : index + 1
+      return
+    }
+    if (!tabDragging || id === activeGroup) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+    dropGroup = id
+  }
+
+  function groupDrop(event: DragEvent, id: string) {
+    if (draggedGroup) {
+      event.preventDefault()
+      event.stopPropagation()
+      if (groupInsert >= 0) onmovegroup(draggedGroup, groupInsert)
+      groupDragEnd()
+      return
+    }
+    if (!tabDragging || id === activeGroup) return
+    event.preventDefault()
+    event.stopPropagation()
+    dropGroup = ''
+    ondroptab(id)
+  }
+
+  /** Below the last group, a dragged group goes to the end. */
+  function groupListDragOver(event: DragEvent) {
+    if (!draggedGroup) return
+    event.preventDefault()
+    event.stopPropagation()
+    groupInsert = groups.length
+  }
+
+  function groupListDrop(event: DragEvent) {
+    if (!draggedGroup) return
+    event.preventDefault()
+    event.stopPropagation()
+    onmovegroup(draggedGroup, groups.length)
+    groupDragEnd()
+  }
+
+  function groupDragLeave(event: DragEvent) {
+    const element = event.currentTarget as HTMLElement
+    if (!element.contains(event.relatedTarget as Node | null)) dropGroup = ''
+  }
+
+  // ----- Sections -----
+
+  /** The sections of the sidebar. A new one gets an entry here, a body in the
+   *  markup, and its ID in the list the program saves. */
+  const SECTIONS: Record<string, { title: string }> = {
+    groups: { title: 'Groups' },
+    places: { title: 'Places' },
+    recent: { title: 'Recent' },
+  }
+  const SECTION_TYPE = 'application/x-sasha-section'
+  let draggedSection = $state('')
+  /** Where a dragged section would go: an index into order, or -1. */
+  let sectionInsert = $state(-1)
+
+  function isOpen(id: string): boolean {
+    return id === 'groups' ? groupsOpen : id === 'places' ? placesOpen : id === 'recent' ? recentOpen : true
+  }
+
+  function toggle(id: string) {
+    if (id === 'groups') ontogglegroups()
+    else if (id === 'places') ontoggleplaces()
+    else if (id === 'recent') ontogglerecent()
+  }
+
+  /** What a folded section says beside its title. */
+  function foldedNote(id: string): string {
+    if (id === 'groups') return shownGroup?.name ?? ''
+    if (id === 'places') return visible.length > 0 ? String(visible.length) : ''
+    if (id === 'recent') return recent.length > 0 ? String(recent.length) : ''
+    return ''
+  }
+
+  function sectionDragStart(event: DragEvent, id: string) {
+    // A place, a group, or a recent folder in the section drags itself.
+    if (event.target !== event.currentTarget && !(event.target as HTMLElement).closest('.fold')) return
+    draggedSection = id
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData(SECTION_TYPE, id)
+    }
+  }
+
+  function sectionDragEnd() {
+    draggedSection = ''
+    sectionInsert = -1
+  }
+
+  function sectionDragOver(event: DragEvent, index: number) {
+    if (!draggedSection) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    sectionInsert = event.clientY < box.top + Math.min(box.height / 2, 40) ? index : index + 1
+  }
+
+  function sectionDrop(event: DragEvent) {
+    if (!draggedSection) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (sectionInsert >= 0) onmovesection(draggedSection, sectionInsert)
+    sectionDragEnd()
+  }
+
+  function sectionDragLeave(event: DragEvent) {
+    const element = event.currentTarget as HTMLElement
+    if (!element.contains(event.relatedTarget as Node | null)) sectionInsert = -1
+  }
+
+  function groupMenu(event: MouseEvent, group: { id: string; name: string }) {
+    event.preventDefault()
+    menu = {
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: 'Show', disabled: group.id === activeGroup, action: () => onshowgroup(group.id) },
+        { label: 'Rename…', action: () => onrenamegroup(group.id) },
+        { label: 'Delete…', danger: true, disabled: group.id === GENERAL, action: () => ondeletegroup(group.id) },
+        'separator',
+        { label: 'New group…', action: onnewgroup },
+      ],
+    }
+  }
 
   let binFull = $derived((recycleBin?.items ?? 0) > 0)
   let binTitle = $derived(
@@ -232,28 +428,39 @@
     }
   }
 
-  const DEFAULT_RECENT_HEIGHT = 220
   let aside = $state<HTMLElement>()
+  /** The section whose edge is being dragged. */
+  let resizing = $state('')
 
-  /** Dragging the top edge of the history changes its height, as in VS Code. */
-  function startRecentResize(event: PointerEvent) {
+  /** Dragging the bottom edge of an open section changes its height, as the
+   *  borders of the views in VS Code do. */
+  function startSectionResize(event: PointerEvent, id: string) {
     event.preventDefault()
+    event.stopPropagation()
     const handle = event.currentTarget as HTMLElement
+    const section = handle.parentElement
+    if (!section) return
     handle.setPointerCapture(event.pointerId)
     const startY = event.clientY
-    const start = recentHeight
-    // The places keep some room above it.
-    const most = Math.max(80, (aside?.clientHeight ?? 600) - 260)
+    const start = section.getBoundingClientRect().height
+    // The other sections keep room for their titles at least.
+    const titles = (order.length - 1) * 36
+    const most = Math.max(80, (aside?.clientHeight ?? 600) - 200 - titles)
+    resizing = id
     const move = (moveEvent: PointerEvent) => {
-      onrecentheight(Math.round(Math.max(60, Math.min(most, start + startY - moveEvent.clientY))))
+      onsectionheight(id, Math.round(Math.max(MIN_SECTION, Math.min(most, start + moveEvent.clientY - startY))))
     }
     const up = () => {
+      resizing = ''
       handle.removeEventListener('pointermove', move)
       handle.removeEventListener('pointerup', up)
     }
     handle.addEventListener('pointermove', move)
     handle.addEventListener('pointerup', up)
   }
+
+  /** The lowest a section goes: its title and a row. */
+  const MIN_SECTION = 64
 
   function middleClick(event: MouseEvent, path: string) {
     if (event.button === 1) {
@@ -278,13 +485,172 @@
   >
     <Icon name="pc" /> This PC
   </button>
-
-  <div class="section-title">
-    <span>Places</span>
-    <button type="button" class="icon small" aria-label="Add a folder" title="Add a folder" onclick={onpickplace}>
-      <Icon name="plus" size={14} />
+  <div class="bin" use:dropTarget={{ path: RECYCLE_BIN, ondrop: ondropbin }}>
+    <button
+      type="button"
+      class="row"
+      class:full={binFull}
+      class:current={current === RECYCLE_BIN}
+      title={binTitle}
+      onclick={() => onopenbin(false)}
+      onauxclick={(event) => {
+        if (event.button === 1) {
+          event.preventDefault()
+          onopenbin(true)
+        }
+      }}
+      oncontextmenu={binMenu}
+    >
+      <Icon name={binFull ? 'binFull' : 'bin'} />
+      <span class="name">Recycle Bin</span>
+      {#if binFull && recycleBin}<span class="detail">{formatSize(recycleBin.bytes)}</span>{/if}
     </button>
+    {#if binFull}
+      <button
+        type="button"
+        class="icon small remove"
+        aria-label="Empty Recycle Bin"
+        title="Empty Recycle Bin"
+        onclick={onemptybin}
+      >
+        <Icon name="trash" size={13} />
+      </button>
+    {/if}
   </div>
+
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="sections" class:insert-end={sectionInsert === order.length} ondragleave={sectionDragLeave}>
+    {#each order as id, index (id)}
+      {@const section = SECTIONS[id]}
+      {#if section}
+        {@const open = isOpen(id)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <section
+          class="section section-{id}"
+          class:open
+          class:sized={open && !!sectionHeights[id]}
+          class:line-before={sectionInsert === index}
+          class:dragging={draggedSection === id}
+          style:height={open && sectionHeights[id] ? `${sectionHeights[id]}px` : null}
+          ondragover={(event) => sectionDragOver(event, index)}
+          ondrop={sectionDrop}
+        >
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="section-title"
+            draggable="true"
+            title="Drag to move this section"
+            ondragstart={(event) => sectionDragStart(event, id)}
+            ondragend={sectionDragEnd}
+          >
+            <!-- A tab held over the folded groups unfolds them, to drop it on one. -->
+            <button
+              type="button"
+              class="fold"
+              aria-expanded={open}
+              title={open ? `Fold ${section.title}` : `Show ${section.title}`}
+              onclick={() => toggle(id)}
+              ondragenter={() => id === 'groups' && tabDragging && !open && toggle(id)}
+            >
+              <Icon name={open ? 'chevronDown' : 'chevron'} size={12} />
+              <span>{section.title}</span>
+              {#if !open}
+                {@const folded = foldedNote(id)}
+                {#if folded}<span class="count" class:group-name={id === 'groups'}>{folded}</span>{/if}
+              {/if}
+            </button>
+            {#if id === 'groups'}
+              <button type="button" class="icon small" aria-label="New group" title="New group" onclick={onnewgroup}>
+                <Icon name="plus" size={14} />
+              </button>
+            {:else if id === 'places'}
+              <button type="button" class="icon small" aria-label="Add a folder" title="Add a folder" onclick={onpickplace}>
+                <Icon name="plus" size={14} />
+              </button>
+            {:else if id === 'recent' && open && recent.length > 0}
+              <button type="button" class="link" onclick={onclearrecent}>Clear</button>
+            {/if}
+          </div>
+          {#if open}
+            {#if id === 'groups'}
+              {@render groupList()}
+            {:else if id === 'places'}
+              {@render placeList()}
+            {:else if id === 'recent'}
+              {@render recentList()}
+            {/if}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="sash"
+              class:active={resizing === id}
+              title="Drag to resize, double-click for the first size"
+              onpointerdown={(event) => startSectionResize(event, id)}
+              ondblclick={() => onsectionheight(id, null)}
+            ></div>
+          {/if}
+        </section>
+      {/if}
+    {/each}
+  </div>
+
+  <div class="spacer"></div>
+
+  <footer>
+    <button type="button" class="row settings" onclick={onsettings}>
+      <Icon name="settings" /> Settings
+    </button>
+  </footer>
+</aside>
+
+{#snippet groupList()}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <ul class="groups" class:insert-end={groupInsert === groups.length} ondragover={groupListDragOver} ondrop={groupListDrop}>
+    {#each groups as group, index (group.id)}
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <li
+        class:drop-on={dropGroup === group.id}
+        class:general={group.id === GENERAL}
+        class:line-before={groupInsert === index}
+        class:dragging={draggedGroup === group.id}
+        draggable="true"
+        ondragstart={(event) => groupDragStart(event, group.id)}
+        ondragend={groupDragEnd}
+        ondragover={(event) => groupDragOver(event, group.id, index)}
+        ondragleave={groupDragLeave}
+        ondrop={(event) => groupDrop(event, group.id)}
+      >
+        <button
+          type="button"
+          class="row"
+          class:current={group.id === activeGroup}
+          title={group.id === activeGroup
+            ? `${group.name}: shown. Drag a tab onto another group to move it there.`
+            : `Show ${group.name}. Double-click to rename.`}
+          onclick={() => onshowgroup(group.id)}
+          ondblclick={() => onrenamegroup(group.id)}
+          oncontextmenu={(event) => groupMenu(event, group)}
+        >
+          <Icon name="tabs" />
+          <span class="name">{group.name}</span>
+          <span class="detail" title={`${group.tabs} ${group.tabs === 1 ? 'tab' : 'tabs'}`}>{group.tabs}</span>
+        </button>
+        {#if group.id !== GENERAL}
+          <button
+            type="button"
+            class="icon small remove"
+            aria-label={`Delete the group ${group.name}`}
+            title="Delete the group"
+            onclick={() => ondeletegroup(group.id)}
+          >
+            <Icon name="close" size={12} />
+          </button>
+        {/if}
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
+{#snippet placeList()}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <ul
     class="places"
@@ -332,61 +698,9 @@
       <li class="empty">Drag folders here to keep them at hand.</li>
     {/if}
   </ul>
-  <div class="bin" use:dropTarget={{ path: RECYCLE_BIN, ondrop: ondropbin }}>
-    <button
-      type="button"
-      class="row"
-      class:full={binFull}
-      class:current={current === RECYCLE_BIN}
-      title={binTitle}
-      onclick={() => onopenbin(false)}
-      onauxclick={(event) => {
-        if (event.button === 1) {
-          event.preventDefault()
-          onopenbin(true)
-        }
-      }}
-      oncontextmenu={binMenu}
-    >
-      <Icon name={binFull ? 'binFull' : 'bin'} />
-      <span class="name">Recycle Bin</span>
-      {#if binFull && recycleBin}<span class="detail">{formatSize(recycleBin.bytes)}</span>{/if}
-    </button>
-    {#if binFull}
-      <button
-        type="button"
-        class="icon small remove"
-        aria-label="Empty Recycle Bin"
-        title="Empty Recycle Bin"
-        onclick={onemptybin}
-      >
-        <Icon name="trash" size={13} />
-      </button>
-    {/if}
-  </div>
+{/snippet}
 
-  <div class="spacer"></div>
-  <section class="recent-section" class:open={recentOpen} style:height={recentOpen ? `${recentHeight}px` : null}>
-  {#if recentOpen}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="sash"
-      title="Drag to resize, double-click for the first size"
-      onpointerdown={startRecentResize}
-      ondblclick={() => onrecentheight(DEFAULT_RECENT_HEIGHT)}
-    ></div>
-  {/if}
-  <div class="section-title recent-title">
-    <button type="button" class="fold" aria-expanded={recentOpen} title={recentOpen ? 'Fold the history' : 'Show the history'} onclick={ontogglerecent}>
-      <Icon name={recentOpen ? 'chevronDown' : 'chevron'} size={12} />
-      <span>Recent</span>
-      {#if !recentOpen && recent.length > 0}<span class="count">{recent.length}</span>{/if}
-    </button>
-    {#if recentOpen && recent.length > 0}
-      <button type="button" class="link" onclick={onclearrecent}>Clear</button>
-    {/if}
-  </div>
-  {#if recentOpen}
+{#snippet recentList()}
   <ul class="recent">
     {#each recent as path (path)}
       <li use:dropTarget={{ path, ondrop: ondropfiles }}>
@@ -416,15 +730,7 @@
       <li class="empty">Folders you open appear here.</li>
     {/if}
   </ul>
-  {/if}
-  </section>
-
-  <footer>
-    <button type="button" class="row settings" onclick={onsettings}>
-      <Icon name="settings" /> Settings
-    </button>
-  </footer>
-</aside>
+{/snippet}
 
 {#if menu}
   <Menu config={menu} onclose={() => (menu = null)} />
@@ -455,15 +761,54 @@
     box-shadow: 0 0 12px rgb(229 140 240 / 35%);
   }
 
+  /* The sections share the room under This PC; a long list scrolls inside its
+     section, and the empty room stays at the bottom. */
+  .sections {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .sections.insert-end {
+    box-shadow: 0 2px 0 var(--accent);
+  }
+
+  .section {
+    position: relative;
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    min-height: 32px;
+    border-top: 1px solid var(--border);
+  }
+
+  .section.dragging {
+    opacity: 0.5;
+  }
+
+  .section.line-before::before {
+    position: absolute;
+    z-index: 3;
+    top: -2px;
+    right: 0;
+    left: 0;
+    height: 2px;
+    background: var(--accent);
+    content: '';
+  }
+
   .section-title {
     display: flex;
+    flex: none;
     align-items: center;
     justify-content: space-between;
     min-height: 28px;
-    margin-top: 8px;
-    padding: 0 6px;
+    margin-top: 4px;
+    padding: 0 6px 0 0;
     color: var(--text-muted);
     font-size: 12px;
+    cursor: grab;
   }
 
   ul {
@@ -472,22 +817,37 @@
     list-style: none;
   }
 
-  .places {
+  .places,
+  .groups,
+  .recent {
     flex: 0 1 auto;
-    min-height: 40px;
+    min-height: 0;
     padding-bottom: 6px;
     overflow-y: auto;
   }
 
-  .places.insert-end {
+  .places.insert-end,
+  .groups.insert-end {
     box-shadow: inset 0 -2px 0 var(--accent);
   }
 
-  .recent-title {
-    padding-top: 8px;
-    padding-left: 0;
-    border-top: 1px solid var(--border);
+  .group-name {
+    overflow: hidden;
+    max-width: 120px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
+
+  /* General has no delete button, so its count stays on hover. */
+  li.general:hover .detail {
+    visibility: visible;
+  }
+
+  li.drop-on .row {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
 
   .fold {
     display: inline-flex;
@@ -515,39 +875,30 @@
     font-size: 11px;
   }
 
-  /* The history sits at the bottom, above the settings; the room between
-     stays empty, as in VS Code. */
   .spacer {
     flex: 1 1 0;
     min-height: 0;
   }
 
-  .recent-section {
-    position: relative;
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    min-height: 0;
-  }
-
+  /* The bottom edge of the history changes its height. */
   .sash {
     position: absolute;
     z-index: 2;
-    top: 6px;
     right: -8px;
+    bottom: -3px;
     left: -8px;
     height: 5px;
     cursor: row-resize;
   }
 
-  .sash:hover {
+  .sash:hover,
+  .sash.active {
     background: var(--accent-soft);
   }
 
-  .recent {
+  /* A section given a height by its edge fills it with its list. */
+  .section.sized > ul {
     flex: 1 1 0;
-    min-height: 0;
-    overflow-y: auto;
   }
 
   li {
