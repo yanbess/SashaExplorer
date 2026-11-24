@@ -53,6 +53,7 @@
         style:top={`${place.top}%`}
         style:transform={`translate(-50%, -50%) rotate(${place.rotate}deg)`}
         style:z-index={index === Math.floor(pictures.length / 2) ? 2 : 1}
+        onload={(event) => ((event.currentTarget as HTMLImageElement).style.display = '')}
         onerror={(event) => ((event.currentTarget as HTMLImageElement).style.display = 'none')}
       />
     {/each}

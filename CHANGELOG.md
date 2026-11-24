@@ -18,6 +18,12 @@ All notable changes to this project are written here. The format follows
 - A setting that pins the sidebar folders to the Quick access of Windows, so
   the open and save dialogs of other programs show them.
 
+### Fixed
+
+- Pictures and videos opened while they were still being written or synced by
+  OneDrive kept their icon until the program restarted. Their thumbnails are
+  now asked for again over a few minutes and show up when they come.
+
 ## [0.1.0] - 2026-11-13
 
 The first public release of the file manager for fans of Cyberpunk: Edgerunners.

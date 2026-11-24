@@ -31,6 +31,7 @@
     RECYCLE_BIN,
     samePath,
     THIS_PC,
+    thumbReady,
     uniqueName,
   } from './lib/util'
 
@@ -1855,6 +1856,7 @@
         if (tab) tab.sizes[found.path] = found.bytes
       }),
       EventsOn('undo:changed', (state: undo.State) => (undoState = state)),
+      EventsOn('thumb:ready', (path: string) => thumbReady(path)),
     ]
     OnFileDrop((x, y, paths) => externalDrop(x, y, paths), false)
     const poll = setInterval(() => {

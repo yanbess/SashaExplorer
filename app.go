@@ -40,6 +40,7 @@ const (
 	eventSearchFound = "search:found"
 	eventSizeFound   = "sizes:found"
 	eventUndoChanged = "undo:changed"
+	eventThumbReady  = "thumb:ready"
 )
 
 // App connects the frontend with the file system and the Windows shell.
@@ -55,6 +56,9 @@ type App struct {
 	// runs. disk is nil when its folder cannot be used.
 	thumbs   *imageCache
 	disk     *thumbcache.Cache
+	// retrying holds the thumbnails being asked for again, by path and size.
+	retryMu  sync.Mutex
+	retrying map[string]bool
 	sizes    *sizeCache
 	media    *memo[media.Info]
 	pictures *memo[[]files.Picture]

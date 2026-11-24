@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"sashaexplorer/internal/winshell"
 )
@@ -60,7 +61,7 @@ func (a *App) serveImage(w http.ResponseWriter, r *http.Request, icon bool) {
 	stored := ""
 	if key == "" {
 		if info, err := os.Stat(path); err == nil {
-			stored = fmt.Sprintf("%s|%d|%d|%d|%t", strings.ToLower(path), size, info.Size(), info.ModTime().UnixNano(), icon)
+			stored = thumbKey(path, size, info, icon)
 			if cached, ok := a.thumbs.get(stored); ok {
 				writeImage(w, cached)
 				return
@@ -84,6 +85,9 @@ func (a *App) serveImage(w http.ResponseWriter, r *http.Request, icon bool) {
 	} else {
 		image, err = a.pool.Thumbnail(path, size)
 	}
+	if !icon && (err != nil || image.Fallback) {
+		a.retryThumbnail(path, size)
+	}
 	if err != nil {
 		http.Error(w, "no image", http.StatusNotFound)
 		return
@@ -98,6 +102,66 @@ func (a *App) serveImage(w http.ResponseWriter, r *http.Request, icon bool) {
 		}
 	}
 	writeImage(w, image)
+}
+
+// thumbKey names a picture of one file, by the file's size and time, so a
+// changed file gets a new one.
+func thumbKey(path string, size int, info os.FileInfo, icon bool) string {
+	return fmt.Sprintf("%s|%d|%d|%d|%t", strings.ToLower(path), size, info.Size(), info.ModTime().UnixNano(), icon)
+}
+
+// thumbRetryDelays are the waits before asking Windows again for the thumbnail
+// of a picture or video it could not make. That happens while the file is still
+// being written, or synced by OneDrive, and its time does not change after, so
+// the page would keep the icon.
+var thumbRetryDelays = []time.Duration{
+	time.Second, 3 * time.Second, 10 * time.Second, 30 * time.Second, time.Minute, 3 * time.Minute,
+}
+
+// retryThumbnail asks Windows again in the background. When the thumbnail comes,
+// it is kept, and the page is told to load it.
+func (a *App) retryThumbnail(path string, size int) {
+	kind := mediaType(path)
+	if kind == "image/svg+xml" || !strings.HasPrefix(kind, "image/") && !strings.HasPrefix(kind, "video/") {
+		return
+	}
+	job := strings.ToLower(path) + "|" + strconv.Itoa(size)
+	a.retryMu.Lock()
+	if a.retrying == nil {
+		a.retrying = map[string]bool{}
+	}
+	if a.retrying[job] {
+		a.retryMu.Unlock()
+		return
+	}
+	a.retrying[job] = true
+	a.retryMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.retryMu.Lock()
+			delete(a.retrying, job)
+			a.retryMu.Unlock()
+		}()
+		for _, delay := range thumbRetryDelays {
+			time.Sleep(delay)
+			info, err := os.Stat(path)
+			if err != nil {
+				return
+			}
+			image, err := a.pool.Thumbnail(path, size)
+			if err != nil || image.Fallback {
+				continue
+			}
+			key := thumbKey(path, size, info, false)
+			a.thumbs.put(key, image)
+			if a.disk != nil {
+				a.disk.Put(key, image.Data, image.ContentType)
+			}
+			a.emit(eventThumbReady, path)
+			return
+		}
+	}()
 }
 
 func writeImage(w http.ResponseWriter, image winshell.Image) {

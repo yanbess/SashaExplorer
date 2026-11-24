@@ -668,6 +668,13 @@
     image.parentElement?.classList.add('no-image')
   }
 
+  /** A thumbnail that failed can come later, at a new address. */
+  function imageLoaded(event: Event) {
+    const image = event.currentTarget as HTMLImageElement
+    image.style.visibility = ''
+    image.parentElement?.classList.remove('no-image')
+  }
+
   /** The date column shows the creation date while the list is sorted by it. */
   let byCreated = $derived(sortKey === 'created')
 
@@ -837,6 +844,7 @@
                 alt=""
                 loading="lazy"
                 draggable="false"
+                onload={imageLoaded}
                 onerror={imageFailed}
               />
             {/if}

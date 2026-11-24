@@ -1,3 +1,5 @@
+import { SvelteMap } from 'svelte/reactivity'
+
 /** Converts a rejected backend call into a message for the user. */
 export function errorText(error: unknown): string {
   const message =
@@ -172,8 +174,19 @@ export function fileUrl(path: string): string {
  *  thumbnails Windows failed to make. */
 const THUMB_VERSION = 2
 
+/** How many times a thumbnail Windows first failed to make has come since, by
+ *  path. Each time gives the thumbnail a new address, so the window loads it in
+ *  place of the icon it kept. */
+const thumbsReady = new SvelteMap<string, number>()
+
+export function thumbReady(path: string) {
+  const key = path.toLowerCase()
+  thumbsReady.set(key, (thumbsReady.get(key) ?? 0) + 1)
+}
+
 export function thumbUrl(path: string, size: number, modified: number): string {
-  return `/_sasha/thumb?p=${encodeURIComponent(path)}&s=${size}&m=${modified}&v=${THUMB_VERSION}`
+  const ready = thumbsReady.get(path.toLowerCase())
+  return `/_sasha/thumb?p=${encodeURIComponent(path)}&s=${size}&m=${modified}&v=${THUMB_VERSION}${ready ? `&r=${ready}` : ''}`
 }
 
 /** Types whose files each have their own icon. Others share one per type. */
